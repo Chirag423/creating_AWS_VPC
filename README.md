@@ -1,140 +1,66 @@
-# cloud_computing_sem_VI
-# AWS VPC Setup with Public and Private Subnets Across Two Availability Zones
+# AWS-VPC-Creation-and-Connection-
 
-This README file provides step-by-step instructions to set up an AWS VPC with public and private subnets across two Availability Zones (AZs), and the configuration of Internet and Virtual Private Gateways for secure communication.
-
+### Here we are going to see how to create a VPC(Virtual Private Cloud) and then how to connect it to your on premise personal computer using a site to site VPN
 ---
 
-## Architecture Overview
+## Step 1 : Creating VPC
+- Open your AWS account and navigate to VPC section and click on create VPC. It will open a window as shown below, we will opt for VPC only option since we are here to learn (VPC and more will create all the requirements for VPC automatically)
+  ![Screenshot from 2025-03-11 16-08-04](https://github.com/user-attachments/assets/41d5b5c1-769e-4c12-a49a-a3d36e357c58)
+- Give it a name via name tag option
+- You can type in your own CIDR block or you can go ahead with the default CIDR that AWS gives (for our purpose we will go ahead with the default CIDR 10.0.0.0/24, which is a private IPv4 address) and click on create VPC
 
-### VPC Configuration
-- **CIDR Block**: `10.0.0.0/24`
+## Step 2 : Creating Subnets
+- Navigate to subnets section and click on create subnet
+- For learning purpose We are going to create 4 subnets in 2 availability zones as follows:
+  - 1st Availability zone: 1 private subnet and 1 public subnet
+  - 2nd Availability zone: 1 private subnet and 1 public subnet
+    ![Screenshot from 2025-03-11 16-25-47](https://github.com/user-attachments/assets/ad3ba440-3fc8-4ce2-b957-3d151e946467)
+- Create 4 sub-netwroks from your VPC CIDR block as follows:
+  - VPC CIDR : 10.0.0.0/24, to create 4 sub networks out of this we wil use a /26 Subnet Mask creating 4 subnets with 64 IPs each
+  - Subnet CIDR Blocks : 10.0.0.0/26, 10.0.0.64/26, 10.0.0.128/26, 10.0.0.192/26
+    ![Screenshot from 2025-03-11 16-22-31](https://github.com/user-attachments/assets/8a9999e6-5384-400a-a408-64afb2cdecc7)
 
-### Subnet Configuration
-- **Zone A**:
-  - **Public Subnet 1**: `10.0.0.0/26`
-  - **Private Subnet 1**: `10.0.0.128/26`
-  
-- **Zone B**:
-  - **Public Subnet 2**: `10.0.0.64/26`
-  - **Private Subnet 2**: `10.0.0.192/26`
+## Step 3 : Creating Route Tables and an Internet Gateway (Igw)
+- Now we need to create a route for the traffic to travel on in our VPC for which we will create a route table.
+- Navigate to route tables section and create a route table for each type of subnet we created in the previous step
+  ![Screenshot from 2025-03-11 16-29-33](https://github.com/user-attachments/assets/f72ffab3-f533-4d0a-8ca6-d9230e85a8f4)
+- We need to edit the routes on both the table according to our network's need
+- We are going to make sure that the our public subnets can exchnage traffic with the Internet and the private subnets do not have direct exchange with the internet
+- To give VPC internet connectivity we need an Internet gateway so we navigate to Igw section and create one. Once created click on it and attach it to our vpc
+- Now we are going to edit our route tables:
+ - Route tables follow the Longest Prefix Match rule(longest subnet mask match), i.e. among multiple routes the one with smallest subnet(longest prefix) will take priority.
+ - Therefore public subnet wil have the following two rules:
+    - 10.0.0.0/24 --> local # anything addressed to local ip stays within VPC(24 bit prefix)
+    - 0.0.0.0/0   --> Igw   # everything goes to internet via Igw(No prefix)
+      ![Screenshot from 2025-03-11 16-42-27](https://github.com/user-attachments/assets/53035d07-ed66-4c24-a64c-dccfce9c540c)
+ - For security reasons private subnet are given indirect access to internet through NAT or VGW, we will use VGW(though the more general method is to use NAT). 
+ - we will edit private route table once again when we create vgw in the next step for now private subnet rules are :
+    - 10.0.0.0/24 --> local
+- Now we associate these route tables with appropriate subnets, the public and private subnets in both availability zone will be associated to the public and private route tables respectively
+    ![Screenshot from 2025-03-11 16-46-12](https://github.com/user-attachments/assets/68f61d0c-8360-4716-95cc-83b39c336795)
+- Once done the VPC resource map will look like:
+    ![Screenshot from 2025-03-11 16-47-47](https://github.com/user-attachments/assets/5e56f78d-faad-4860-a8c6-a463d5828677)
 
-### Gateways
-- **Internet Gateway (IGW)**: Connects Public Subnets to the internet.
-- **Virtual Private Gateway (VPG)**: Connects Private Subnets securely.
+## Step 4 : Creating Virtual Private Gateway (Vgw)
+- Vgw is one of the end points of site to site VPN & is used to connect VPC to an on premise data center but for this tutorial we will be using it to connect the VPC to our personal computer
+- We will make sure the whenever any instance or service in private subnet wants to access internet it can do so securely through the on premise data center(in this case our laptop) that has internet access rather than directly accessing the internet. Hence our laptop will act as bi-directional NAT or default gateway to private subnet of VPC.
+- Navigate to Virtual Private Gateways section and click on create virtual private gateway and create it with default ASN
+- Once created attach it to the VPC(notice that it will not appear in VPC resource map even after it's attached to the VPC)
+    ![Screenshot from 2025-03-11 16-58-26](https://github.com/user-attachments/assets/31a7f252-9568-4892-ade0-08b42eb1343f)
+- Now we edit the private route table again to route the traffic intended for exchange with other networks to Vgw
+  - New rule : 0.0.0.0/0 --> vgw
+    ![Screenshot from 2025-03-11 17-00-06](https://github.com/user-attachments/assets/49901449-8af5-47be-8f8f-bccd862f88c2)
 
----
+## Step 5 : Connecting to VPC using Site to Site VPN
+- With our VPC setup it's time we start on the connection part, for which we are going to use AWS site to site VPN service.
+- A site to site VPN is used to securely connect two networks, in our case our AWS VPC and our pc sitting on our private LAN.
+- It has seeveral components engaged in it, the main components are:
+   - AWS side : VPC(along with it's components) & Vgw
+   - On-prem side : Customer gateway & VPN Connection
 
-## Definitions
+## Step A : Creating a Customer Gateway
+- Navigate to customer gateways section and click on create customer gateway, use the default value for BGP ASN, insert you PC's public IPv4 address in IP adress space (you can find it by searching "my public ip" on google and make sure it's static once customer gateway is connected to it)
+  ![Screenshot from 2025-03-11 18-17-16](https://github.com/user-attachments/assets/1588a869-fca7-4e86-a834-8d61f43df08e)
+- 
 
-- **Virtual Private Cloud (VPC)**: A logically isolated section of AWS cloud for launching resources.
-- **Subnets**: Subdivisions of VPC allowing grouping by IP range. They can be public (internet-accessible) or private (isolated).
-- **Internet Gateway (IGW)**: Allows public subnets to access the internet.
-- **Virtual Private Gateway (VPG)**: Facilitates secure communication between private subnets and on-premises networks.
-- **Route Table**: Rules for directing traffic in a network.
-- **Availability Zone (AZ)**: A physically isolated location within an AWS Region designed for high availability.
 
----
-
-## Step-by-Step Instructions
-
-### Step 1: Create the VPC
-
-1. **Log in to AWS Management Console.**
-2. **Navigate to VPC Dashboard** → Click **Create VPC**:
-   - **Name**: `My-VPC`
-   - **IPv4 CIDR Block**: `10.0.0.0/24`
-3. **Click Create VPC**.
-
-### Step 2: Create Subnets
-
-#### Zone A
-1. **Public Subnet 1**:
-   - **Availability Zone**: `us-east-1a`
-   - **CIDR Block**: `10.0.0.0/26`
-   - **Click Create Subnet**.
-2. **Private Subnet 1**:
-   - **Availability Zone**: `us-east-1a`
-   - **CIDR Block**: `10.0.0.128/26`
-   - **Click Create Subnet**.
-
-#### Zone B
-1. **Public Subnet 2**:
-   - **Availability Zone**: `us-east-1b`
-   - **CIDR Block**: `10.0.0.64/26`
-   - **Click Create Subnet**.
-2. **Private Subnet 2**:
-   - **Availability Zone**: `us-east-1b`
-   - **CIDR Block**: `10.0.0.192/26`
-   - **Click Create Subnet**.
-
-### Step 3: Create an Internet Gateway (IGW)
-
-1. **Navigate to Internet Gateways** → Click **Create Internet Gateway**.
-2. **Name**: `My-IGW`
-3. **Click Create** → Attach it to `My-VPC`.
-
-### Step 4: Create a Virtual Private Gateway (VPG)
-
-1. **Navigate to Virtual Private Gateways** → Click **Create Virtual Private Gateway**.
-2. **Name**: `My-VPG`
-3. **Leave ASN as default** → Click **Create**.
-4. **Attach the VPG to `My-VPC`**.
-
-### Step 5: Configure Route Tables
-
-#### Public Route Table
-1. **Create Route Table**: Name: `Public-Route-Table`
-2. Add route for internet traffic:
-   - **Destination**: `0.0.0.0/0`
-   - **Target**: Select `My-IGW`
-3. **Associate Public Subnets**: `Public-Subnet-1`, `Public-Subnet-2`
-
-#### Private Route Table
-1. **Create Route Table**: Name: `Private-Route-Table`
-2. Enable **Route Propagation** for VPG.
-3. **Associate Private Subnets**: `Private-Subnet-1`, `Private-Subnet-2`.
-
-### Step 6: Launch EC2 Instances
-
-#### Public Subnets
-1. **Launch EC2 in Public-Subnet-1**:
-   - Select an AMI (e.g., Amazon Linux 2)
-   - Enable **Public IP Address**
-2. Repeat the process for **Public-Subnet-2**.
-
-#### Private Subnets
-1. **Launch EC2 in Private-Subnet-1**:
-   - Disable **Auto-assign Public IP**.
-2. Repeat the process for **Private-Subnet-2**.
-
----
-
-## Configure a Security Group for SSH Access
-
-### Step 1: Create Security Group
-1. Navigate to **Security Groups** under **Network & Security**.
-2. **Click Create security group**.
-3. Set **Name**: `Private-SSH-Access` and **Description**: `Allows SSH access from specific IP`.
-
-### Step 2: Configure Inbound Rules
-- **Type**: SSH
-- **Port Range**: 22
-- **Source**: Choose IP or CIDR block (e.g., `My IP`, `203.0.113.25/32`).
-
-### Step 3: Attach Security Group
-1. **Navigate to EC2 Dashboard**.
-2. **Select EC2 instance**.
-3. **Click Actions** → **Security** → **Change security groups** → Select `Private-SSH-Access` → **Save**.
-
----
-
-## Testing and Verification
-
-1. **Verify Public Instances**: Ensure they have internet access via public IP.
-2. **Verify Private Instances**: Ensure communication occurs securely via the VPG.
-3. **Test Connectivity**: Use **SSH** or **ping** to verify inter-instance communication.
-
----
-
-By following the instructions outlined above, you should be able to create a secure and highly available AWS network with public and private subnets across two Availability Zones.
